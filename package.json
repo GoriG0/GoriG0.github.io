@@ -1,0 +1,14 @@
+{
+  "name": "sphere-map-generator",
+  "version": "1.0.0",
+  "description": "Hidden board-game sphere map generator and HTTP API.",
+  "main": "mapServer.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node mapServer.js",
+    "generate": "node sphereMapGenerator.js"
+  },
+  "license": "MIT"
+}

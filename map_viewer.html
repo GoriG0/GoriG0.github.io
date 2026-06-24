@@ -1,0 +1,1510 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sphere Map 3D Viewer</title>
+  <style>
+    :root {
+      --bg: #0e1116;
+      --panel: rgba(19, 24, 32, 0.9);
+      --ink: #ecf3ff;
+      --muted: #9db3d2;
+      --line: #2f3e55;
+      --accent: #5ad7b1;
+      --accent-2: #89b8ff;
+      --warn: #ff9f6b;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: radial-gradient(circle at 20% 15%, #1f3149 0%, #0e1116 55%, #090b0f 100%);
+      color: var(--ink);
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    #app {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+
+    #hud {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      z-index: 10;
+      width: min(360px, calc(100% - 32px));
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      backdrop-filter: blur(6px);
+      box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4);
+      max-height: calc(100vh - 32px);
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    #hud h1 {
+      margin: 0 0 8px;
+      font-size: 1.05rem;
+      letter-spacing: 0.02em;
+      font-weight: 650;
+    }
+
+    #hud p {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.35;
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+
+    button,
+    input[type="file"] {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #141b25;
+      color: var(--ink);
+      padding: 8px 10px;
+      font-size: 0.88rem;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    button:hover {
+      border-color: var(--accent-2);
+    }
+
+    .small {
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .stat {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--line);
+      padding: 5px 8px;
+      border-radius: 999px;
+      margin-right: 6px;
+      margin-top: 4px;
+      font-size: 0.8rem;
+      color: var(--ink);
+      background: rgba(16, 22, 31, 0.8);
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .dot-node { background: var(--accent); }
+    .dot-edge { background: var(--accent-2); }
+    .dot-shell { background: var(--warn); }
+    .dot-normal { background: #ffffff; }
+    .dot-good { background: #8fe26b; }
+    .dot-bad { background: #ff6f91; }
+    .dot-shop { background: #1e4fa8; }
+
+    #typeStats {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .type-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 4px 6px;
+      font-size: 0.78rem;
+      color: var(--ink);
+      background: rgba(16, 22, 31, 0.65);
+    }
+
+    #status {
+      margin-top: 8px;
+      font-size: 0.84rem;
+      color: var(--muted);
+      min-height: 1.2em;
+    }
+
+    #dropHint {
+      position: absolute;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 5;
+      border: 1px dashed var(--line);
+      border-radius: 10px;
+      padding: 8px 12px;
+      color: var(--muted);
+      background: rgba(10, 12, 16, 0.66);
+      font-size: 0.82rem;
+      pointer-events: none;
+    }
+
+    #generatorPanel {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    #playerPanel {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      z-index: 10;
+      width: min(320px, calc(100% - 32px));
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      backdrop-filter: blur(6px);
+      box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4);
+      max-height: calc(100vh - 32px);
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    #playerPanel h2 {
+      margin: 0 0 8px;
+      font-size: 0.95rem;
+      font-weight: 650;
+      color: var(--accent-2);
+    }
+
+    #turnDiagram {
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: radial-gradient(circle at center, rgba(89, 122, 177, 0.18), rgba(9, 11, 15, 0.95));
+      display: block;
+      margin-top: 8px;
+      touch-action: none;
+    }
+
+    #turnMeta {
+      margin-top: 8px;
+      font-size: 0.84rem;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    #turnControls {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+
+    #turnControls button {
+      flex: 1 1 0;
+    }
+
+    #playerRoster {
+      margin-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .player-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(16, 22, 31, 0.65);
+      font-size: 0.82rem;
+    }
+
+    .player-row.active {
+      border-color: var(--accent-2);
+      box-shadow: 0 0 0 1px rgba(137, 184, 255, 0.18) inset;
+    }
+
+    .player-name {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .player-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex: none;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+    }
+
+    .player-badge {
+      font-size: 0.72rem;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    #generatorPanel h2 {
+      margin: 0 0 8px;
+      font-size: 0.95rem;
+      font-weight: 650;
+      color: var(--accent);
+    }
+
+    .param-group {
+      margin-bottom: 10px;
+    }
+
+    .param-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+      font-size: 0.85rem;
+    }
+
+    .param-label span:first-child {
+      color: var(--ink);
+    }
+
+    .param-label span:last-child {
+      color: var(--accent-2);
+      font-weight: 600;
+      min-width: 40px;
+      text-align: right;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--line);
+      outline: none;
+      -webkit-appearance: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent-2);
+      cursor: pointer;
+      border: 1px solid var(--accent-2);
+    }
+
+    input[type="range"]::-moz-range-thumb {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent-2);
+      cursor: pointer;
+      border: 1px solid var(--accent-2);
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 6px 8px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #141b25;
+      color: var(--ink);
+      font-size: 0.85rem;
+    }
+
+    select {
+      width: 100%;
+      padding: 6px 8px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #141b25;
+      color: var(--ink);
+      font-size: 0.85rem;
+    }
+
+    #generateBtn {
+      width: 100%;
+      margin-top: 10px;
+      padding: 10px;
+      background: linear-gradient(135deg, #5ad7b1 0%, #4dbfa0 100%);
+      color: #0e1116;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    #generateBtn:hover {
+      background: linear-gradient(135deg, #6ce5c1 0%, #5acbb0 100%);
+      transform: translateY(-1px);
+    }
+
+    #generateBtn:disabled {
+      background: var(--line);
+      color: var(--muted);
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    #generatingStatus {
+      margin-top: 8px;
+      font-size: 0.8rem;
+      color: var(--muted);
+      min-height: 1em;
+    }
+
+    #typePreview {
+      margin-top: 6px;
+      font-size: 0.8rem;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    @media (max-width: 640px) {
+      #hud {
+        top: 10px;
+        left: 10px;
+        width: calc(100% - 20px);
+        max-height: calc(100vh - 20px);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="hud">
+      <h1>Sphere Map 3D Viewer</h1>
+      <p>Load your generated JSON map and move freely around the sphere.</p>
+
+      <div class="row">
+        <input id="fileInput" type="file" accept=".json,application/json" />
+        <button id="resetBtn" type="button">Reset Camera</button>
+      </div>
+
+      <div class="row small">
+        Mouse: rotate | Wheel: zoom | Right-click drag: pan
+      </div>
+
+      <div>
+        <span class="stat"><span class="dot dot-node"></span> Nodes: <strong id="nodesCount">-</strong></span>
+        <span class="stat"><span class="dot dot-edge"></span> Edges: <strong id="edgesCount">-</strong></span>
+        <span class="stat"><span class="dot dot-shell"></span> Radius: <strong id="radiusText">1.0</strong></span>
+      </div>
+
+      <div id="typeStats">
+        <span class="type-pill"><span class="dot dot-normal"></span> Normal: <strong id="normalCount">-</strong></span>
+        <span class="type-pill"><span class="dot dot-good"></span> Good: <strong id="goodCount">-</strong></span>
+        <span class="type-pill"><span class="dot dot-bad"></span> Bad: <strong id="badCount">-</strong></span>
+        <span class="type-pill"><span class="dot dot-shop"></span> Shop: <strong id="shopCount">-</strong></span>
+      </div>
+
+      <div id="status">Waiting for map JSON...</div>
+
+      <div id="generatorPanel">
+        <h2>⚡ Generate New Map</h2>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Nodes</span>
+            <span id="nodesValue">40</span>
+          </div>
+          <input type="range" id="nodesSlider" min="8" max="256" value="40" />
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>K-Nearest</span>
+            <span id="kValue">10</span>
+          </div>
+          <input type="range" id="kSlider" min="2" max="20" value="10" />
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Jitter</span>
+            <span id="jitterValue">0.15</span>
+          </div>
+          <input type="range" id="jitterSlider" min="0" max="1" step="0.01" value="0.15" />
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Density</span>
+          </div>
+          <select id="densitySelect">
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high" selected>High</option>
+          </select>
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Server URL</span>
+          </div>
+          <input type="text" id="serverUrlInput" placeholder="https://your-server.onrender.com" />
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Seed (optional)</span>
+          </div>
+          <input type="text" id="seedInput" placeholder="Leave blank for random" />
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Good %</span>
+            <span id="goodPctValue">20</span>
+          </div>
+          <input type="range" id="goodPctSlider" min="0" max="80" step="1" value="20" />
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Bad %</span>
+            <span id="badPctValue">20</span>
+          </div>
+          <input type="range" id="badPctSlider" min="0" max="80" step="1" value="20" />
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Shop %</span>
+            <span id="shopPctValue">5</span>
+          </div>
+          <input type="range" id="shopPctSlider" min="0" max="80" step="1" value="5" />
+        </div>
+
+        <button id="generateBtn">Generate Map</button>
+        <div id="generatingStatus"></div>
+        <div id="typePreview"></div>
+      </div>
+    </div>
+
+    <div id="playerPanel">
+      <h2>Turn Order</h2>
+      <canvas id="turnDiagram" width="320" height="320" aria-label="Turn diagram"></canvas>
+      <div id="turnMeta">Load or generate a map to start player turns.</div>
+      <div id="turnControls">
+        <button id="endTurnBtn" type="button">End Turn</button>
+        <button id="respawnBtn" type="button">Respawn Players</button>
+      </div>
+      <div id="playerRoster"></div>
+    </div>
+
+    <div id="dropHint">Drop a map JSON file anywhere on this window</div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+  <script>
+
+    const app = document.getElementById('app');
+    const fileInput = document.getElementById('fileInput');
+    const resetBtn = document.getElementById('resetBtn');
+    const statusEl = document.getElementById('status');
+    const nodesCountEl = document.getElementById('nodesCount');
+    const edgesCountEl = document.getElementById('edgesCount');
+    const radiusTextEl = document.getElementById('radiusText');
+    const normalCountEl = document.getElementById('normalCount');
+    const goodCountEl = document.getElementById('goodCount');
+    const badCountEl = document.getElementById('badCount');
+    const shopCountEl = document.getElementById('shopCount');
+    const turnDiagramCanvas = document.getElementById('turnDiagram');
+    const turnDiagramCtx = turnDiagramCanvas.getContext('2d');
+    const turnMetaEl = document.getElementById('turnMeta');
+    const endTurnBtn = document.getElementById('endTurnBtn');
+    const respawnBtn = document.getElementById('respawnBtn');
+    const playerRosterEl = document.getElementById('playerRoster');
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.Fog(0x0a0f18, 0.5, 200);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 200);
+    camera.position.set(2.9, 2.2, 2.9);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.sortObjects = true;
+    app.appendChild(renderer.domElement);
+
+    const cameraTarget = new THREE.Vector3(0, 0, 0);
+    let cameraDistance = 5.5;
+    let yaw = 0.75;
+    let pitch = 0.45;
+    let roll = 0;
+    let isDragging = false;
+    let dragButton = 0;
+    let lastX = 0;
+    let lastY = 0;
+
+    const keys = {
+      ArrowUp: false,
+      ArrowDown: false,
+      ArrowLeft: false,
+      ArrowRight: false,
+      q: false,
+      e: false,
+    };
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function syncCamera() {
+      const cp = Math.cos(pitch);
+      camera.position.x = cameraTarget.x + cameraDistance * cp * Math.cos(yaw);
+      camera.position.y = cameraTarget.y + cameraDistance * Math.sin(pitch);
+      camera.position.z = cameraTarget.z + cameraDistance * cp * Math.sin(yaw);
+      
+      // Apply roll by rotating the up vector around the forward axis
+      const forward = new THREE.Vector3().subVectors(cameraTarget, camera.position).normalize();
+      const baseUp = new THREE.Vector3(0, 1, 0);
+      const quat = new THREE.Quaternion().setFromAxisAngle(forward, roll);
+      const up = baseUp.clone().applyQuaternion(quat);
+      
+      camera.up.copy(up);
+      camera.lookAt(cameraTarget);
+    }
+
+    renderer.domElement.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+    });
+
+    renderer.domElement.addEventListener('pointerdown', (e) => {
+      isDragging = true;
+      dragButton = e.button;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      renderer.domElement.setPointerCapture(e.pointerId);
+    });
+
+    renderer.domElement.addEventListener('pointermove', (e) => {
+      if (!isDragging) return;
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      lastX = e.clientX;
+      lastY = e.clientY;
+
+      if (dragButton === 0) {
+        yaw -= dx * 0.006;
+        pitch = clamp(pitch - dy * 0.006, -Math.PI / 2 + 0.01, Math.PI / 2 - 0.01);
+      } else if (dragButton === 2) {
+        const panScale = cameraDistance * 0.0012;
+        const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+        const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+        cameraTarget.addScaledVector(right, -dx * panScale);
+        cameraTarget.addScaledVector(up, dy * panScale);
+      }
+
+      syncCamera();
+    });
+
+    renderer.domElement.addEventListener('pointerup', (e) => {
+      isDragging = false;
+      renderer.domElement.releasePointerCapture(e.pointerId);
+    });
+
+    renderer.domElement.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      cameraDistance = clamp(cameraDistance * (1 + Math.sign(e.deltaY) * 0.09), 1.25, 30);
+      syncCamera();
+    }, { passive: false });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        keys[e.key] = true;
+        e.preventDefault();
+      }
+      if (e.key.toLowerCase() === 'q' || e.key.toLowerCase() === 'e') {
+        keys[e.key.toLowerCase()] = true;
+        e.preventDefault();
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        keys[e.key] = false;
+        e.preventDefault();
+      }
+      if (e.key.toLowerCase() === 'q' || e.key.toLowerCase() === 'e') {
+        keys[e.key.toLowerCase()] = false;
+        e.preventDefault();
+      }
+    });
+
+    const ambient = new THREE.AmbientLight(0x89a8d8, 0.52);
+    scene.add(ambient);
+
+    const keyLight = new THREE.DirectionalLight(0xffffff, 0.78);
+    keyLight.position.set(4, 7, 5);
+    scene.add(keyLight);
+
+    const fillLight = new THREE.DirectionalLight(0x7eb8ff, 0.4);
+    fillLight.position.set(-5, -3, -4);
+    scene.add(fillLight);
+
+    const mapGroup = new THREE.Group();
+    scene.add(mapGroup);
+
+    const playerMarkerGroup = new THREE.Group();
+    scene.add(playerMarkerGroup);
+
+    const shellMaterial = new THREE.MeshPhongMaterial({
+      color: 0xffffff,
+      transparent: false,
+      opacity: 1,
+      shininess: 30,
+      side: THREE.FrontSide,
+      depthWrite: true,
+    });
+
+    const nodeMaterials = {
+      normal: new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        roughness: 0.35,
+        metalness: 0.12,
+        emissive: 0x2a2a2a,
+        emissiveIntensity: 0.32,
+      }),
+      good: new THREE.MeshStandardMaterial({
+        color: 0x8fe26b,
+        roughness: 0.28,
+        metalness: 0.12,
+        emissive: 0x1d3a12,
+        emissiveIntensity: 0.75,
+      }),
+      bad: new THREE.MeshStandardMaterial({
+        color: 0xff6f91,
+        roughness: 0.32,
+        metalness: 0.1,
+        emissive: 0x431326,
+        emissiveIntensity: 0.72,
+      }),
+      shop: new THREE.MeshStandardMaterial({
+        color: 0x1e4fa8,
+        roughness: 0.25,
+        metalness: 0.18,
+        emissive: 0x0a1d45,
+        emissiveIntensity: 0.75,
+      }),
+    };
+
+    const edgeMaterial = new THREE.LineBasicMaterial({
+      color: 0x89b8ff,
+      transparent: true,
+      opacity: 0.86,
+      depthTest: true,
+      depthWrite: false,
+    });
+
+    const PLAYER_COLORS = [0xf6d365, 0x8fe26b, 0xff6f91, 0x9fd8ff, 0xc792ea, 0xffb86b];
+    let currentGraph = null;
+    let currentAdjacency = [];
+    let players = [];
+    let activePlayerIndex = 0;
+    let movesRemaining = 0;
+    let diagramStubs = [];
+
+    function setStatus(text, warn = false) {
+      statusEl.textContent = text;
+      statusEl.style.color = warn ? '#ffbc96' : 'var(--muted)';
+    }
+
+    function clearMap() {
+      while (mapGroup.children.length > 0) {
+        disposeObject3D(mapGroup.children[0]);
+      }
+      while (playerMarkerGroup.children.length > 0) {
+        disposeObject3D(playerMarkerGroup.children[0]);
+      }
+    }
+
+    function disposeObject3D(object) {
+      object.traverse((child) => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          if (Array.isArray(child.material)) {
+            child.material.forEach((m) => m.dispose());
+          } else {
+            child.material.dispose();
+          }
+        }
+        if (child.userData && child.userData.texture) {
+          child.userData.texture.dispose();
+        }
+      });
+      if (object.parent) {
+        object.parent.remove(object);
+      }
+    }
+
+    function buildAdjacency(nodeCount, edges) {
+      const adjacency = Array.from({ length: nodeCount }, () => []);
+      for (const { a, b } of edges) {
+        adjacency[a].push(b);
+        adjacency[b].push(a);
+      }
+      return adjacency.map((neighbors) => Array.from(new Set(neighbors)).sort((x, y) => x - y));
+    }
+
+    function shuffleArray(values) {
+      const copy = values.slice();
+      for (let i = copy.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy;
+    }
+
+    function chooseSpawnNodes(nodeCount, playerCount) {
+      const nodes = Array.from({ length: nodeCount }, (_, i) => i);
+      if (nodeCount >= playerCount) {
+        return shuffleArray(nodes).slice(0, playerCount);
+      }
+
+      const spawns = [];
+      for (let i = 0; i < playerCount; i += 1) {
+        spawns.push(nodes[Math.floor(Math.random() * nodeCount)]);
+      }
+      return spawns;
+    }
+
+    function getCurrentPlayer() {
+      return players[activePlayerIndex] || null;
+    }
+
+    function getMoveLimit(player) {
+      return player && player.role === 'hunter' ? 3 : 1;
+    }
+
+    function setActivePlayer(index) {
+      activePlayerIndex = index % players.length;
+      const player = getCurrentPlayer();
+      movesRemaining = getMoveLimit(player);
+      updatePlayerUI();
+      renderPlayerMarkers();
+      renderTurnDiagram();
+    }
+
+    function endTurn() {
+      if (!players.length) return;
+      setActivePlayer((activePlayerIndex + 1) % players.length);
+    }
+
+    function initializePlayers(nodeCount) {
+      const spawnNodes = chooseSpawnNodes(nodeCount, 4);
+      players = spawnNodes.map((nodeIndex, index) => ({
+        id: index + 1,
+        name: `Player ${index + 1}`,
+        role: index === 0 ? 'hunter' : 'normal',
+        nodeIndex,
+        color: `#${PLAYER_COLORS[index % PLAYER_COLORS.length].toString(16).padStart(6, '0')}`,
+      }));
+      setActivePlayer(0);
+    }
+
+    function createLabelSprite(text, color) {
+      const labelCanvas = document.createElement('canvas');
+      const labelCtx = labelCanvas.getContext('2d');
+      const fontSize = 11;
+      labelCtx.font = `700 ${fontSize}px Segoe UI, Tahoma, sans-serif`;
+      const textWidth = Math.ceil(labelCtx.measureText(text).width);
+      const paddingX = 6;
+      const paddingY = 4;
+      labelCanvas.width = textWidth + paddingX * 2;
+      labelCanvas.height = fontSize + paddingY * 2;
+
+      labelCtx.font = `700 ${fontSize}px Segoe UI, Tahoma, sans-serif`;
+      labelCtx.textAlign = 'center';
+      labelCtx.textBaseline = 'middle';
+
+      labelCtx.fillStyle = 'rgba(8, 12, 18, 0.75)';
+      labelCtx.strokeStyle = color;
+      labelCtx.lineWidth = 2;
+      roundRect(labelCtx, 1, 1, labelCanvas.width - 2, labelCanvas.height - 2, 6);
+      labelCtx.fill();
+      labelCtx.stroke();
+
+      labelCtx.fillStyle = '#ffffff';
+      labelCtx.fillText(text, labelCanvas.width / 2, labelCanvas.height / 2 + 1);
+
+      const texture = new THREE.CanvasTexture(labelCanvas);
+      texture.needsUpdate = true;
+      const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false });
+      const sprite = new THREE.Sprite(material);
+      sprite.scale.set(labelCanvas.width / 130, labelCanvas.height / 130, 1);
+      sprite.userData.texture = texture;
+      return sprite;
+    }
+
+    function roundRect(ctx, x, y, width, height, radius) {
+      const r = Math.min(radius, width / 2, height / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + width - r, y);
+      ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+      ctx.lineTo(x + width, y + height - r);
+      ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+      ctx.lineTo(x + r, y + height);
+      ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    }
+
+    function renderPlayerMarkers() {
+      while (playerMarkerGroup.children.length > 0) {
+        const child = playerMarkerGroup.children[0];
+        playerMarkerGroup.remove(child);
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          if (Array.isArray(child.material)) {
+            child.material.forEach((m) => m.dispose());
+          } else {
+            child.material.dispose();
+          }
+        }
+        if (child.userData && child.userData.texture) {
+          child.userData.texture.dispose();
+        }
+      }
+
+      if (!currentGraph) return;
+
+      const radius = currentGraph.radius;
+      const markerGeo = new THREE.SphereGeometry(Math.max(0.035, radius * 0.03), 14, 10);
+      for (const player of players) {
+        const position = currentGraph.points[player.nodeIndex];
+        if (!position) continue;
+        const marker = new THREE.Mesh(
+          markerGeo,
+          new THREE.MeshStandardMaterial({
+            color: player.color,
+            emissive: new THREE.Color(player.color),
+            emissiveIntensity: player.role === 'hunter' ? 0.65 : 0.35,
+            roughness: 0.25,
+            metalness: 0.15,
+          })
+        );
+        const worldPosition = position.clone().normalize().multiplyScalar(radius + radius * 0.06);
+        marker.position.set(0, 0, 0);
+        marker.userData.playerId = player.id;
+
+        const label = createLabelSprite(player.name, player.color);
+        label.position.set(0, radius * 0.09 + 0.12, 0);
+        label.center.set(0.5, 0.0);
+
+        const playerGroup = new THREE.Group();
+        playerGroup.position.copy(worldPosition);
+        playerGroup.add(marker);
+        playerGroup.add(label);
+        playerGroup.userData.playerId = player.id;
+        playerMarkerGroup.add(playerGroup);
+      }
+    }
+
+    function updatePlayerUI() {
+      if (!players.length) {
+        turnMetaEl.textContent = 'Load or generate a map to start player turns.';
+        playerRosterEl.innerHTML = '';
+        return;
+      }
+
+      const player = getCurrentPlayer();
+      const currentNodeText = player ? `Node ${player.nodeIndex + 1}` : '-';
+      const roleText = player ? (player.role === 'hunter' ? 'Hunter' : 'Normal') : '-';
+      turnMetaEl.textContent = `${player ? player.name : 'Player'} is up. Role: ${roleText}. Current node: ${currentNodeText}. Moves left this turn: ${movesRemaining}.`;
+
+      playerRosterEl.innerHTML = players
+        .map((entry, index) => {
+          const activeClass = index === activePlayerIndex ? 'active' : '';
+          const badge = entry.role === 'hunter' ? 'Hunter' : 'Normal';
+          return `
+            <div class="player-row ${activeClass}">
+              <div class="player-name">
+                <span class="player-dot" style="background:${entry.color}"></span>
+                <span>${entry.name}</span>
+              </div>
+              <div class="player-badge">${badge} | Node ${entry.nodeIndex + 1}</div>
+            </div>
+          `;
+        })
+        .join('');
+    }
+
+    function projectMoveDirections(nodeIndex) {
+      if (!currentGraph || !currentAdjacency[nodeIndex]) return [];
+      const origin = currentGraph.points[nodeIndex];
+      const upHint = Math.abs(origin.y) < 0.85 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+      const axisX = new THREE.Vector3().crossVectors(upHint, origin).normalize();
+      const axisY = new THREE.Vector3().crossVectors(origin, axisX).normalize();
+      const neighbors = currentAdjacency[nodeIndex];
+      return neighbors.map((neighborIndex) => {
+        const target = currentGraph.points[neighborIndex];
+        const tangent = target.clone().sub(origin.clone().multiplyScalar(target.dot(origin)));
+        const x = tangent.dot(axisX);
+        const y = tangent.dot(axisY);
+        const angle = Math.atan2(y, x);
+        const strength = Math.min(1, Math.max(0.35, tangent.length() * 1.6));
+        return { neighborIndex, angle, strength };
+      });
+    }
+
+    function renderTurnDiagram() {
+      const canvas = turnDiagramCanvas;
+      const ctx = turnDiagramCtx;
+      const width = canvas.width;
+      const height = canvas.height;
+      ctx.clearRect(0, 0, width, height);
+
+      ctx.save();
+      ctx.fillStyle = '#0c1017';
+      ctx.fillRect(0, 0, width, height);
+      const activePlayer = getCurrentPlayer();
+      if (!activePlayer || !currentGraph) {
+        ctx.fillStyle = '#9db3d2';
+        ctx.font = '600 16px Segoe UI, Tahoma, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('No active player', width / 2, height / 2);
+        ctx.restore();
+        diagramStubs = [];
+        return;
+      }
+
+      const centerX = width / 2;
+      const centerY = height / 2;
+      const radius = Math.min(width, height) * 0.34;
+      const stubs = projectMoveDirections(activePlayer.nodeIndex);
+      diagramStubs = [];
+
+      ctx.strokeStyle = 'rgba(157, 179, 210, 0.12)';
+      for (const ring of [0.38, 0.68, 1.0]) {
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius * ring, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = activePlayer.color;
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, 8, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = 'rgba(255,255,255,0.92)';
+      ctx.font = '600 14px Segoe UI, Tahoma, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(activePlayer.name, centerX, centerY - 18);
+      ctx.fillStyle = 'rgba(157,179,210,0.95)';
+      ctx.font = '12px Segoe UI, Tahoma, sans-serif';
+      ctx.fillText(`Node ${activePlayer.nodeIndex + 1}`, centerX, centerY + 30);
+
+      for (const stub of stubs) {
+        const targetX = centerX + Math.cos(stub.angle) * radius * stub.strength;
+        const targetY = centerY + Math.sin(stub.angle) * radius * stub.strength;
+        ctx.strokeStyle = 'rgba(137,184,255,0.95)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY);
+        ctx.lineTo(targetX, targetY);
+        ctx.stroke();
+
+        const tickX = centerX + Math.cos(stub.angle) * radius * (stub.strength + 0.04);
+        const tickY = centerY + Math.sin(stub.angle) * radius * (stub.strength + 0.04);
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.beginPath();
+        ctx.arc(tickX, tickY, 4, 0, Math.PI * 2);
+        ctx.stroke();
+
+        diagramStubs.push({
+          neighborIndex: stub.neighborIndex,
+          x1: centerX,
+          y1: centerY,
+          x2: targetX,
+          y2: targetY,
+        });
+      }
+
+      ctx.fillStyle = 'rgba(236,243,255,0.86)';
+      ctx.font = '12px Segoe UI, Tahoma, sans-serif';
+      ctx.fillText(`Moves left: ${movesRemaining}`, centerX, height - 18);
+      ctx.restore();
+    }
+
+    function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const lengthSquared = dx * dx + dy * dy;
+      if (lengthSquared === 0) return Math.hypot(px - x1, py - y1);
+      let t = ((px - x1) * dx + (py - y1) * dy) / lengthSquared;
+      t = Math.max(0, Math.min(1, t));
+      const projX = x1 + t * dx;
+      const projY = y1 + t * dy;
+      return Math.hypot(px - projX, py - projY);
+    }
+
+    function attemptMoveToNode(nodeIndex) {
+      const activePlayer = getCurrentPlayer();
+      if (!activePlayer || !currentAdjacency[activePlayer.nodeIndex]) return;
+      if (!currentAdjacency[activePlayer.nodeIndex].includes(nodeIndex)) return;
+      if (movesRemaining <= 0) return;
+
+      activePlayer.nodeIndex = nodeIndex;
+      movesRemaining -= 1;
+      renderPlayerMarkers();
+
+      if (movesRemaining <= 0) {
+        endTurn();
+      } else {
+        updatePlayerUI();
+        renderTurnDiagram();
+      }
+    }
+
+    turnDiagramCanvas.addEventListener('pointerdown', (event) => {
+      if (!diagramStubs.length || !players.length) return;
+      const rect = turnDiagramCanvas.getBoundingClientRect();
+      const scaleX = turnDiagramCanvas.width / rect.width;
+      const scaleY = turnDiagramCanvas.height / rect.height;
+      const px = (event.clientX - rect.left) * scaleX;
+      const py = (event.clientY - rect.top) * scaleY;
+
+      let bestStub = null;
+      let bestDistance = Infinity;
+      for (const stub of diagramStubs) {
+        const distance = pointToSegmentDistance(px, py, stub.x1, stub.y1, stub.x2, stub.y2);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestStub = stub;
+        }
+      }
+
+      if (bestStub && bestDistance <= 14) {
+        attemptMoveToNode(bestStub.neighborIndex);
+      }
+    });
+
+    function parseMap(raw) {
+      let data;
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        throw new Error('Invalid JSON file.');
+      }
+
+      if (!Array.isArray(data.nodes) || !Array.isArray(data.edges)) {
+        throw new Error('JSON must include nodes[] and edges[].');
+      }
+
+      const points = data.nodes.map((n) => {
+        if (!n || !n.position) {
+          throw new Error('Each node must contain position {x,y,z}.');
+        }
+        return new THREE.Vector3(n.position.x, n.position.y, n.position.z);
+      });
+
+      const nodeTypes = data.nodes.map((n) => {
+        const t = typeof n.type === 'string' ? n.type.toLowerCase() : 'normal';
+        if (t !== 'normal' && t !== 'good' && t !== 'bad' && t !== 'shop') {
+          return 'normal';
+        }
+        return t;
+      });
+
+      const edges = data.edges.map((e) => {
+        if (typeof e.a !== 'number' || typeof e.b !== 'number') {
+          throw new Error('Each edge must contain numeric a and b.');
+        }
+        if (e.a < 0 || e.a >= points.length || e.b < 0 || e.b >= points.length) {
+          throw new Error('Edge references an out-of-range node index.');
+        }
+        return e;
+      });
+
+      return { points, edges, nodeTypes };
+    }
+
+    function getSphereRadius(points) {
+      if (points.length === 0) return 1;
+      let sum = 0;
+      for (const p of points) {
+        sum += p.length();
+      }
+      return sum / points.length;
+    }
+
+    function drawMap(points, edges, nodeTypes = []) {
+      clearMap();
+
+      currentGraph = { points, edges, nodeTypes, radius: getSphereRadius(points) };
+      currentAdjacency = buildAdjacency(points.length, edges);
+
+      const radius = currentGraph.radius;
+      radiusTextEl.textContent = radius.toFixed(2);
+
+      const shell = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.75, 42, 30), shellMaterial);
+      mapGroup.add(shell);
+
+      const nodeGeo = new THREE.SphereGeometry(Math.max(0.028, radius * 0.025), 14, 10);
+      for (let i = 0; i < points.length; i += 1) {
+        const p = points[i];
+        const type = nodeTypes[i] || 'normal';
+        const nodeMaterial = nodeMaterials[type] || nodeMaterials.normal;
+        const node = new THREE.Mesh(nodeGeo, nodeMaterial);
+        node.position.copy(p);
+        mapGroup.add(node);
+      }
+
+      const linePositions = [];
+      for (const e of edges) {
+        const a = points[e.a];
+        const b = points[e.b];
+        linePositions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+      }
+
+      const edgeGeo = new THREE.BufferGeometry();
+      edgeGeo.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3));
+      const lineSegments = new THREE.LineSegments(edgeGeo, edgeMaterial);
+      lineSegments.frustumCulled = false;
+      lineSegments.renderOrder = 1;
+      mapGroup.add(lineSegments);
+
+      const startDistance = Math.max(2.5, radius * 3.2);
+      cameraTarget.set(0, 0, 0);
+      cameraDistance = startDistance;
+      yaw = 0.75;
+      pitch = 0.45;
+      roll = 0;
+      syncCamera();
+
+      nodesCountEl.textContent = String(points.length);
+      edgesCountEl.textContent = String(edges.length);
+      const typeCounts = { normal: 0, good: 0, bad: 0, shop: 0 };
+      for (const t of nodeTypes) {
+        if (typeCounts[t] !== undefined) {
+          typeCounts[t] += 1;
+        }
+      }
+      if (nodeTypes.length === 0) {
+        typeCounts.normal = points.length;
+      }
+      normalCountEl.textContent = String(typeCounts.normal);
+      goodCountEl.textContent = String(typeCounts.good);
+      badCountEl.textContent = String(typeCounts.bad);
+      shopCountEl.textContent = String(typeCounts.shop);
+
+      initializePlayers(points.length);
+      renderPlayerMarkers();
+      updatePlayerUI();
+      renderTurnDiagram();
+      setStatus('Map loaded. You can now explore it in 3D.');
+    }
+
+    async function loadFromFile(file) {
+      try {
+        const raw = await file.text();
+        const { points, edges, nodeTypes } = parseMap(raw);
+        drawMap(points, edges, nodeTypes);
+      } catch (err) {
+        setStatus(err.message || 'Could not load map.', true);
+      }
+    }
+
+    fileInput.addEventListener('change', (event) => {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      loadFromFile(file);
+    });
+
+    resetBtn.addEventListener('click', () => {
+      const r = Number(radiusTextEl.textContent) || 1;
+      const startDistance = Math.max(2.5, r * 3.2);
+      cameraTarget.set(0, 0, 0);
+      cameraDistance = startDistance;
+      yaw = 0.75;
+      pitch = 0.45;
+      roll = 0;
+      syncCamera();
+      setStatus('Camera reset.');
+    });
+
+    endTurnBtn.addEventListener('click', () => {
+      if (players.length) {
+        endTurn();
+      }
+    });
+
+    respawnBtn.addEventListener('click', () => {
+      if (!currentGraph) return;
+      initializePlayers(currentGraph.points.length);
+      renderPlayerMarkers();
+      updatePlayerUI();
+      renderTurnDiagram();
+      setStatus('Players respawned on random nodes.');
+    });
+
+    // Generator controls
+    const nodesSlider = document.getElementById('nodesSlider');
+    const kSlider = document.getElementById('kSlider');
+    const jitterSlider = document.getElementById('jitterSlider');
+    const densitySelect = document.getElementById('densitySelect');
+    const seedInput = document.getElementById('seedInput');
+    const serverUrlInput = document.getElementById('serverUrlInput');
+    const goodPctSlider = document.getElementById('goodPctSlider');
+    const badPctSlider = document.getElementById('badPctSlider');
+    const shopPctSlider = document.getElementById('shopPctSlider');
+    const generateBtn = document.getElementById('generateBtn');
+    const generatingStatus = document.getElementById('generatingStatus');
+    const nodesValue = document.getElementById('nodesValue');
+    const kValue = document.getElementById('kValue');
+    const jitterValue = document.getElementById('jitterValue');
+    const goodPctValue = document.getElementById('goodPctValue');
+    const badPctValue = document.getElementById('badPctValue');
+    const shopPctValue = document.getElementById('shopPctValue');
+    const typePreviewEl = document.getElementById('typePreview');
+
+    function countTypes(nodeCount, goodPct, badPct, shopPct) {
+      const goodCount = Math.ceil(nodeCount * (goodPct / 100.0));
+      const badCount = Math.ceil(nodeCount * (badPct / 100.0));
+      const shopCount = Math.ceil(nodeCount * (shopPct / 100.0));
+      const totalSpecial = goodCount + badCount + shopCount;
+      const trimmedTotal = Math.min(totalSpecial, nodeCount);
+      const normalCount = nodeCount - trimmedTotal;
+      return {
+        normalCount,
+        goodCount: Math.min(goodCount, nodeCount),
+        badCount: Math.min(badCount, nodeCount),
+        shopCount: Math.min(shopCount, nodeCount),
+      };
+    }
+
+    function readTypePercentages() {
+      return {
+        goodPct: Number(goodPctSlider.value),
+        badPct: Number(badPctSlider.value),
+        shopPct: Number(shopPctSlider.value),
+      };
+    }
+
+    function refreshTypePercentLabels() {
+      const nodeCount = Number(nodesSlider.value);
+      const { goodPct, badPct, shopPct } = readTypePercentages();
+      goodPctValue.textContent = String(goodPct);
+      badPctValue.textContent = String(badPct);
+      shopPctValue.textContent = String(shopPct);
+      const total = goodPct + badPct + shopPct;
+      const counts = countTypes(nodeCount, goodPct, badPct, shopPct);
+      typePreviewEl.textContent = `Preview counts: normal ${counts.normalCount}, good ${counts.goodCount}, bad ${counts.badCount}, shop ${counts.shopCount}`;
+      if (total > 100) {
+        generatingStatus.textContent = `Type total is ${total}% (must be <= 100%)`;
+        generatingStatus.style.color = 'var(--warn)';
+      } else {
+        generatingStatus.textContent = `Normal will be ${100 - total}%`;
+        generatingStatus.style.color = 'var(--muted)';
+      }
+    }
+
+    // Update slider display values
+    nodesSlider.addEventListener('input', (e) => {
+      nodesValue.textContent = e.target.value;
+      // Update k-slider max value
+      kSlider.max = Math.max(20, parseInt(e.target.value) - 1);
+      refreshTypePercentLabels();
+    });
+
+    kSlider.addEventListener('input', (e) => {
+      kValue.textContent = e.target.value;
+    });
+
+    jitterSlider.addEventListener('input', (e) => {
+      jitterValue.textContent = parseFloat(e.target.value).toFixed(2);
+    });
+
+    goodPctSlider.addEventListener('input', refreshTypePercentLabels);
+    badPctSlider.addEventListener('input', refreshTypePercentLabels);
+    shopPctSlider.addEventListener('input', refreshTypePercentLabels);
+
+    const SERVER_URL_STORAGE_KEY = 'sphereMapServerUrl';
+
+    function getServerBaseUrl() {
+      const stored = localStorage.getItem(SERVER_URL_STORAGE_KEY);
+      return stored || 'http://localhost:8765';
+    }
+
+    function setServerBaseUrl(value) {
+      const trimmed = value.trim().replace(/\/+$/, '');
+      if (trimmed) {
+        localStorage.setItem(SERVER_URL_STORAGE_KEY, trimmed);
+      } else {
+        localStorage.removeItem(SERVER_URL_STORAGE_KEY);
+      }
+      return trimmed;
+    }
+
+    // Load any previously saved server URL into the field on startup.
+    serverUrlInput.value = localStorage.getItem(SERVER_URL_STORAGE_KEY) || '';
+    serverUrlInput.addEventListener('change', (e) => setServerBaseUrl(e.target.value));
+
+    async function generateMap() {
+      const nodes = nodesSlider.value;
+      const k = kSlider.value;
+      const jitter = jitterSlider.value;
+      const density = densitySelect.value;
+      const seed = seedInput.value.trim() || 'random';
+      const { goodPct, badPct, shopPct } = readTypePercentages();
+      if (goodPct + badPct + shopPct > 100) {
+        setStatus('good/bad/shop percentages must add up to 100 or less.', true);
+        return;
+      }
+
+      const baseUrl = setServerBaseUrl(serverUrlInput.value) || 'http://localhost:8765';
+
+      generateBtn.disabled = true;
+      generatingStatus.textContent = '⏳ Generating...';
+      generatingStatus.style.color = 'var(--accent-2)';
+
+      try {
+        const url = new URL('/api/generate', baseUrl);
+        url.searchParams.set('nodes', nodes);
+        url.searchParams.set('k_nearest', k);
+        url.searchParams.set('jitter', jitter);
+        url.searchParams.set('density', density);
+        url.searchParams.set('good_pct', String(goodPct));
+        url.searchParams.set('bad_pct', String(badPct));
+        url.searchParams.set('shop_pct', String(shopPct));
+        if (seed !== 'random') {
+          url.searchParams.set('seed', seed);
+        }
+
+        const response = await fetch(url.toString());
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Generation failed');
+        }
+
+        const data = await response.json();
+        if (!data.success) {
+          throw new Error(data.error || 'Generation failed');
+        }
+
+        const { points, edges, nodeTypes } = parseMap(JSON.stringify(data.map));
+        drawMap(points, edges, nodeTypes);
+
+        generatingStatus.textContent = `✓ Generated with seed ${data.map.meta.seed}`;
+        generatingStatus.style.color = 'var(--accent)';
+        seedInput.value = '';
+      } catch (err) {
+        const hint = baseUrl.includes('localhost')
+          ? ' (using localhost \u2014 set Server URL above if your generator is hosted elsewhere)'
+          : '';
+        generatingStatus.textContent = `✗ ${err.message}`;
+        generatingStatus.style.color = 'var(--warn)';
+        setStatus(`Generation error: ${err.message}${hint}`, true);
+      } finally {
+        generateBtn.disabled = false;
+      }
+    }
+
+    generateBtn.addEventListener('click', generateMap);
+
+    // Listen for Enter in seed input
+    seedInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        generateMap();
+      }
+    });
+
+    refreshTypePercentLabels();
+
+    window.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'copy';
+    });
+
+    window.addEventListener('drop', (event) => {
+      event.preventDefault();
+      const file = event.dataTransfer.files && event.dataTransfer.files[0];
+      if (!file) return;
+      if (!file.name.toLowerCase().endsWith('.json')) {
+        setStatus('Drop a JSON file generated by your map script.', true);
+        return;
+      }
+      loadFromFile(file);
+    });
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Handle arrow key camera movement
+      if (keys.ArrowUp) {
+        pitch = clamp(pitch + 0.04, -Math.PI / 2 + 0.01, Math.PI / 2 - 0.01);
+        syncCamera();
+      }
+      if (keys.ArrowDown) {
+        pitch = clamp(pitch - 0.04, -Math.PI / 2 + 0.01, Math.PI / 2 - 0.01);
+        syncCamera();
+      }
+      if (keys.ArrowLeft) {
+        yaw += 0.04;
+        syncCamera();
+      }
+      if (keys.ArrowRight) {
+        yaw -= 0.04;
+        syncCamera();
+      }
+      if (keys.q) {
+        roll -= 0.04;
+        syncCamera();
+      }
+      if (keys.e) {
+        roll += 0.04;
+        syncCamera();
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    syncCamera();
+    animate();
+  </script>
+</body>
+</html>
