@@ -732,6 +732,15 @@
       depthWrite: false,
     });
 
+    const lastEdgeMaterial = new THREE.LineBasicMaterial({
+      color: 0xff4444,
+      transparent: true,
+      opacity: 1.0,
+      depthTest: true,
+      depthWrite: false,
+      linewidth: 3,
+    });
+
     const PLAYER_COLORS = [0xf6d365, 0x8fe26b, 0xff6f91, 0x9fd8ff, 0xc792ea, 0xffb86b];
     let currentGraph = null;
     let currentAdjacency = [];
@@ -833,6 +842,7 @@
         name: `Player ${index + 1}`,
         role: index === 0 ? 'hunter' : 'normal',
         nodeIndex,
+        previousNodeIndex: null,
         color: `#${PLAYER_COLORS[index % PLAYER_COLORS.length].toString(16).padStart(6, '0')}`,
       }));
       setActivePlayer(0);
@@ -998,351 +1008,319 @@
       const activePlayer = getCurrentPlayer();
       if (!activePlayer || !currentGraph) {
         ctx.fillStyle = '#9db3d2';
-        ctx.font = '600 16px Segoe UI, Tahoma, sans-serif';
+        ctx.font = '14px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('No active player', width / 2, height / 2);
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Load map to see moves', width / 2, height / 2);
         ctx.restore();
-        diagramStubs = [];
         return;
       }
 
       const centerX = width / 2;
       const centerY = height / 2;
-      const radius = Math.min(width, height) * 0.34;
-      const stubs = projectMoveDirections(activePlayer.nodeIndex);
+      const radius = Math.min(width, height) / 2 - 20;
+
+      // Draw border
+      ctx.strokeStyle = '#2f3e55';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      const moveDirections = projectMoveDirections(activePlayer.nodeIndex);
       diagramStubs = [];
 
-      ctx.strokeStyle = 'rgba(157, 179, 210, 0.12)';
-      for (const ring of [0.38, 0.68, 1.0]) {
+      for (const { neighborIndex, angle, strength } of moveDirections) {
+        const length = radius * strength;
+        const x = centerX + Math.cos(angle) * length;
+        const y = centerY + Math.sin(angle) * length;
+
+        // Draw edge to neighbor
+        ctx.strokeStyle = '#89b8ff';
+        ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(centerX, centerY, radius * ring, 0, Math.PI * 2);
+        ctx.moveTo(centerX, centerY);
+        ctx.lineTo(x, y);
         ctx.stroke();
+
+        // Draw node
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(x, y, 6, 0, Math.PI * 2);
+        ctx.fill();
+
+        diagramStubs.push({ x, y, neighborIndex, angle });
       }
 
+      // Draw center (active player)
       ctx.fillStyle = activePlayer.color;
       ctx.beginPath();
       ctx.arc(centerX, centerY, 8, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.fillStyle = 'rgba(255,255,255,0.92)';
-      ctx.font = '600 14px Segoe UI, Tahoma, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(activePlayer.name, centerX, centerY - 18);
-      ctx.fillStyle = 'rgba(157,179,210,0.95)';
-      ctx.font = '12px Segoe UI, Tahoma, sans-serif';
-      ctx.fillText(`Node ${activePlayer.nodeIndex + 1}`, centerX, centerY + 30);
-
-      for (const stub of stubs) {
-        const targetX = centerX + Math.cos(stub.angle) * radius * stub.strength;
-        const targetY = centerY + Math.sin(stub.angle) * radius * stub.strength;
-        ctx.strokeStyle = 'rgba(137,184,255,0.95)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(centerX, centerY);
-        ctx.lineTo(targetX, targetY);
-        ctx.stroke();
-
-        const tickX = centerX + Math.cos(stub.angle) * radius * (stub.strength + 0.04);
-        const tickY = centerY + Math.sin(stub.angle) * radius * (stub.strength + 0.04);
-        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-        ctx.beginPath();
-        ctx.arc(tickX, tickY, 4, 0, Math.PI * 2);
-        ctx.stroke();
-
-        diagramStubs.push({
-          neighborIndex: stub.neighborIndex,
-          x1: centerX,
-          y1: centerY,
-          x2: targetX,
-          y2: targetY,
-        });
-      }
-
-      ctx.fillStyle = 'rgba(236,243,255,0.86)';
-      ctx.font = '12px Segoe UI, Tahoma, sans-serif';
-      ctx.fillText(`Moves left: ${movesRemaining}`, centerX, height - 18);
       ctx.restore();
     }
 
-    function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
-      const dx = x2 - x1;
-      const dy = y2 - y1;
-      const lengthSquared = dx * dx + dy * dy;
-      if (lengthSquared === 0) return Math.hypot(px - x1, py - y1);
-      let t = ((px - x1) * dx + (py - y1) * dy) / lengthSquared;
-      t = Math.max(0, Math.min(1, t));
-      const projX = x1 + t * dx;
-      const projY = y1 + t * dy;
-      return Math.hypot(px - projX, py - projY);
+    function loadMap(data) {
+      clearMap();
+      currentGraph = null;
+      currentAdjacency = [];
+
+      const nodes = data.nodes || [];
+      const edges = data.edges || [];
+
+      if (nodes.length < 1) {
+        setStatus('Invalid map: no nodes', true);
+        return;
+      }
+
+      const points = nodes.map((n) => new THREE.Vector3(n.position.x, n.position.y, n.position.z));
+      const radius = Math.max(...points.map((p) => p.length()));
+
+      currentGraph = { points, radius, nodeTypes: nodes.map((n) => n.type) };
+      currentAdjacency = buildAdjacency(nodes.length, edges);
+
+      // Count node types
+      const typeCounts = { normal: 0, good: 0, bad: 0, shop: 0 };
+      for (const node of nodes) {
+        if (typeCounts.hasOwnProperty(node.type)) {
+          typeCounts[node.type]++;
+        }
+      }
+
+      nodesCountEl.textContent = nodes.length;
+      edgesCountEl.textContent = edges.length;
+      radiusTextEl.textContent = radius.toFixed(2);
+      normalCountEl.textContent = typeCounts.normal;
+      goodCountEl.textContent = typeCounts.good;
+      badCountEl.textContent = typeCounts.bad;
+      shopCountEl.textContent = typeCounts.shop;
+
+      // Render sphere shell
+      const shellGeo = new THREE.IcosahedronGeometry(radius, 5);
+      const shell = new THREE.Mesh(shellGeo, shellMaterial);
+      mapGroup.add(shell);
+
+      // Render nodes
+      const nodeGeo = new THREE.SphereGeometry(Math.max(0.025, radius * 0.02), 12, 8);
+      for (let i = 0; i < nodes.length; i++) {
+        const pos = points[i].normalize().multiplyScalar(radius);
+        const node = nodes[i];
+        const material = nodeMaterials[node.type] || nodeMaterials.normal;
+        const mesh = new THREE.Mesh(nodeGeo, material);
+        mesh.position.copy(pos);
+        mesh.userData.nodeIndex = i;
+        mapGroup.add(mesh);
+      }
+
+      // Render edges
+      for (const edge of edges) {
+        const start = points[edge.a].normalize().multiplyScalar(radius);
+        const end = points[edge.b].normalize().multiplyScalar(radius);
+        const edgeGeo = new THREE.BufferGeometry().setFromPoints([start, end]);
+        const line = new THREE.Line(edgeGeo, edgeMaterial);
+        line.userData.edgeKey = `${Math.min(edge.a, edge.b)},${Math.max(edge.a, edge.b)}`;
+        mapGroup.add(line);
+      }
+
+      initializePlayers(nodes.length);
+      setStatus(`Map loaded: ${nodes.length} nodes, ${edges.length} edges`);
     }
 
-    function attemptMoveToNode(nodeIndex) {
-      const activePlayer = getCurrentPlayer();
-      if (!activePlayer || !currentAdjacency[activePlayer.nodeIndex]) return;
-      if (!currentAdjacency[activePlayer.nodeIndex].includes(nodeIndex)) return;
-      if (movesRemaining <= 0) return;
+    function movePlayerToNode(targetIndex) {
+      if (!currentGraph || !players.length) return;
 
-      activePlayer.nodeIndex = nodeIndex;
-      movesRemaining -= 1;
+      const player = getCurrentPlayer();
+      if (player.nodeIndex === targetIndex) return;
+
+      if (!currentAdjacency[player.nodeIndex].includes(targetIndex)) {
+        setStatus('Invalid move!', true);
+        return;
+      }
+
+      player.previousNodeIndex = player.nodeIndex;
+      player.nodeIndex = targetIndex;
+      movesRemaining--;
+
+      // Check if hunter caught a player
+      checkHunterCatch();
+
+      // Re-render edges to highlight the path the player took
+      renderEdgesWithLastMoveHighlight();
+      updatePlayerUI();
       renderPlayerMarkers();
+      renderTurnDiagram();
 
       if (movesRemaining <= 0) {
         endTurn();
-      } else {
-        updatePlayerUI();
-        renderTurnDiagram();
       }
     }
 
-    turnDiagramCanvas.addEventListener('pointerdown', (event) => {
-      if (!diagramStubs.length || !players.length) return;
-      const rect = turnDiagramCanvas.getBoundingClientRect();
-      const scaleX = turnDiagramCanvas.width / rect.width;
-      const scaleY = turnDiagramCanvas.height / rect.height;
-      const px = (event.clientX - rect.left) * scaleX;
-      const py = (event.clientY - rect.top) * scaleY;
+    function checkHunterCatch() {
+      const hunter = players.find(p => p.role === 'hunter');
+      if (!hunter) return;
 
-      let bestStub = null;
-      let bestDistance = Infinity;
-      for (const stub of diagramStubs) {
-        const distance = pointToSegmentDistance(px, py, stub.x1, stub.y1, stub.x2, stub.y2);
-        if (distance < bestDistance) {
-          bestDistance = distance;
-          bestStub = stub;
+      const caughtPlayer = players.find(p => p !== hunter && p.nodeIndex === hunter.nodeIndex);
+      if (caughtPlayer) {
+        // Make caught player the new hunter
+        caughtPlayer.role = 'hunter';
+        hunter.role = 'normal';
+
+        // Respawn all players
+        const nodeCount = currentGraph.points.length;
+        const spawnNodes = chooseSpawnNodes(nodeCount, players.length);
+        for (let i = 0; i < players.length; i++) {
+          players[i].previousNodeIndex = null;
+          players[i].nodeIndex = spawnNodes[i];
         }
+
+        setStatus(`${caughtPlayer.name} caught! They are now the hunter!`);
+        setActivePlayer(0);
       }
-
-      if (bestStub && bestDistance <= 14) {
-        attemptMoveToNode(bestStub.neighborIndex);
-      }
-    });
-
-    function parseMap(raw) {
-      let data;
-      try {
-        data = JSON.parse(raw);
-      } catch {
-        throw new Error('Invalid JSON file.');
-      }
-
-      if (!Array.isArray(data.nodes) || !Array.isArray(data.edges)) {
-        throw new Error('JSON must include nodes[] and edges[].');
-      }
-
-      const points = data.nodes.map((n) => {
-        if (!n || !n.position) {
-          throw new Error('Each node must contain position {x,y,z}.');
-        }
-        return new THREE.Vector3(n.position.x, n.position.y, n.position.z);
-      });
-
-      const nodeTypes = data.nodes.map((n) => {
-        const t = typeof n.type === 'string' ? n.type.toLowerCase() : 'normal';
-        if (t !== 'normal' && t !== 'good' && t !== 'bad' && t !== 'shop') {
-          return 'normal';
-        }
-        return t;
-      });
-
-      const edges = data.edges.map((e) => {
-        if (typeof e.a !== 'number' || typeof e.b !== 'number') {
-          throw new Error('Each edge must contain numeric a and b.');
-        }
-        if (e.a < 0 || e.a >= points.length || e.b < 0 || e.b >= points.length) {
-          throw new Error('Edge references an out-of-range node index.');
-        }
-        return e;
-      });
-
-      return { points, edges, nodeTypes };
     }
 
-    function getSphereRadius(points) {
-      if (points.length === 0) return 1;
-      let sum = 0;
-      for (const p of points) {
-        sum += p.length();
-      }
-      return sum / points.length;
-    }
+    function renderEdgesWithLastMoveHighlight() {
+      // Remove all current edge lines
+      const edgesToRemove = [];
+      mapGroup.traverse((child) => {
+        if (child.userData && child.userData.edgeKey !== undefined) {
+          edgesToRemove.push(child);
+        }
+      });
+      edgesToRemove.forEach(edge => disposeObject3D(edge));
 
-    function drawMap(points, edges, nodeTypes = []) {
-      clearMap();
-
-      currentGraph = { points, edges, nodeTypes, radius: getSphereRadius(points) };
-      currentAdjacency = buildAdjacency(points.length, edges);
+      if (!currentGraph) return;
 
       const radius = currentGraph.radius;
-      radiusTextEl.textContent = radius.toFixed(2);
+      const player = getCurrentPlayer();
+      const previousPlayer = players[(activePlayerIndex - 1 + players.length) % players.length];
 
-      const shell = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.75, 42, 30), shellMaterial);
-      mapGroup.add(shell);
-
-      const nodeGeo = new THREE.SphereGeometry(Math.max(0.028, radius * 0.025), 14, 10);
-      for (let i = 0; i < points.length; i += 1) {
-        const p = points[i];
-        const type = nodeTypes[i] || 'normal';
-        const nodeMaterial = nodeMaterials[type] || nodeMaterials.normal;
-        const node = new THREE.Mesh(nodeGeo, nodeMaterial);
-        node.position.copy(p);
-        mapGroup.add(node);
-      }
-
-      const linePositions = [];
-      for (const e of edges) {
-        const a = points[e.a];
-        const b = points[e.b];
-        linePositions.push(a.x, a.y, a.z, b.x, b.y, b.z);
-      }
-
-      const edgeGeo = new THREE.BufferGeometry();
-      edgeGeo.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3));
-      const lineSegments = new THREE.LineSegments(edgeGeo, edgeMaterial);
-      lineSegments.frustumCulled = false;
-      lineSegments.renderOrder = 1;
-      mapGroup.add(lineSegments);
-
-      const startDistance = Math.max(2.5, radius * 3.2);
-      cameraTarget.set(0, 0, 0);
-      cameraDistance = startDistance;
-      yaw = 0.75;
-      pitch = 0.45;
-      roll = 0;
-      syncCamera();
-
-      nodesCountEl.textContent = String(points.length);
-      edgesCountEl.textContent = String(edges.length);
-      const typeCounts = { normal: 0, good: 0, bad: 0, shop: 0 };
-      for (const t of nodeTypes) {
-        if (typeCounts[t] !== undefined) {
-          typeCounts[t] += 1;
+      // Re-render all edges
+      const edges = [];
+      for (let i = 0; i < currentAdjacency.length; i++) {
+        for (const j of currentAdjacency[i]) {
+          if (i < j) {
+            edges.push({ a: i, b: j });
+          }
         }
       }
-      if (nodeTypes.length === 0) {
-        typeCounts.normal = points.length;
-      }
-      normalCountEl.textContent = String(typeCounts.normal);
-      goodCountEl.textContent = String(typeCounts.good);
-      badCountEl.textContent = String(typeCounts.bad);
-      shopCountEl.textContent = String(typeCounts.shop);
 
-      initializePlayers(points.length);
-      renderPlayerMarkers();
-      updatePlayerUI();
-      renderTurnDiagram();
-      setStatus('Map loaded. You can now explore it in 3D.');
-    }
+      for (const edge of edges) {
+        const start = currentGraph.points[edge.a].normalize().multiplyScalar(radius);
+        const end = currentGraph.points[edge.b].normalize().multiplyScalar(radius);
+        const edgeGeo = new THREE.BufferGeometry().setFromPoints([start, end]);
 
-    async function loadFromFile(file) {
-      try {
-        const raw = await file.text();
-        const { points, edges, nodeTypes } = parseMap(raw);
-        drawMap(points, edges, nodeTypes);
-      } catch (err) {
-        setStatus(err.message || 'Could not load map.', true);
+        // Check if this is the last move edge
+        const isLastMoveEdge = previousPlayer && previousPlayer.previousNodeIndex !== null &&
+          ((edge.a === previousPlayer.previousNodeIndex && edge.b === previousPlayer.nodeIndex) ||
+           (edge.b === previousPlayer.previousNodeIndex && edge.a === previousPlayer.nodeIndex));
+
+        const material = isLastMoveEdge ? lastEdgeMaterial : edgeMaterial;
+        const line = new THREE.Line(edgeGeo, material);
+        line.userData.edgeKey = `${Math.min(edge.a, edge.b)},${Math.max(edge.a, edge.b)}`;
+        mapGroup.add(line);
       }
     }
 
-    fileInput.addEventListener('change', (event) => {
-      const file = event.target.files && event.target.files[0];
+    function respawnPlayers() {
+      if (!currentGraph || !players.length) return;
+      const nodeCount = currentGraph.points.length;
+      const spawnNodes = chooseSpawnNodes(nodeCount, players.length);
+      for (let i = 0; i < players.length; i++) {
+        players[i].previousNodeIndex = null;
+        players[i].nodeIndex = spawnNodes[i];
+      }
+      setActivePlayer(0);
+      renderEdgesWithLastMoveHighlight();
+      setStatus('Players respawned!');
+    }
+
+    // Event listeners
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
       if (!file) return;
-      loadFromFile(file);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const data = JSON.parse(event.target.result);
+          loadMap(data);
+        } catch (err) {
+          setStatus(`Error loading file: ${err.message}`, true);
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    app.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    });
+
+    app.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const files = e.dataTransfer.files;
+      if (!files.length) return;
+      const file = files[0];
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const data = JSON.parse(event.target.result);
+          loadMap(data);
+        } catch (err) {
+          setStatus(`Error loading file: ${err.message}`, true);
+        }
+      };
+      reader.readAsText(file);
     });
 
     resetBtn.addEventListener('click', () => {
-      const r = Number(radiusTextEl.textContent) || 1;
-      const startDistance = Math.max(2.5, r * 3.2);
+      camera.position.set(2.9, 2.2, 2.9);
       cameraTarget.set(0, 0, 0);
-      cameraDistance = startDistance;
       yaw = 0.75;
       pitch = 0.45;
       roll = 0;
       syncCamera();
-      setStatus('Camera reset.');
     });
 
-    endTurnBtn.addEventListener('click', () => {
-      if (players.length) {
-        endTurn();
+    turnDiagramCanvas.addEventListener('click', (e) => {
+      const rect = turnDiagramCanvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      for (const stub of diagramStubs) {
+        const dist = Math.sqrt((x - stub.x) ** 2 + (y - stub.y) ** 2);
+        if (dist < 10) {
+          movePlayerToNode(stub.neighborIndex);
+          break;
+        }
       }
     });
 
-    respawnBtn.addEventListener('click', () => {
-      if (!currentGraph) return;
-      initializePlayers(currentGraph.points.length);
-      renderPlayerMarkers();
-      updatePlayerUI();
-      renderTurnDiagram();
-      setStatus('Players respawned on random nodes.');
-    });
+    endTurnBtn.addEventListener('click', endTurn);
+    respawnBtn.addEventListener('click', respawnPlayers);
 
-    // Generator controls
+    // Generator functionality
     const nodesSlider = document.getElementById('nodesSlider');
     const kSlider = document.getElementById('kSlider');
     const jitterSlider = document.getElementById('jitterSlider');
-    const densitySelect = document.getElementById('densitySelect');
-    const seedInput = document.getElementById('seedInput');
-    const serverUrlInput = document.getElementById('serverUrlInput');
     const goodPctSlider = document.getElementById('goodPctSlider');
     const badPctSlider = document.getElementById('badPctSlider');
     const shopPctSlider = document.getElementById('shopPctSlider');
+    const densitySelect = document.getElementById('densitySelect');
+    const serverUrlInput = document.getElementById('serverUrlInput');
+    const seedInput = document.getElementById('seedInput');
     const generateBtn = document.getElementById('generateBtn');
     const generatingStatus = document.getElementById('generatingStatus');
+    const typePreview = document.getElementById('typePreview');
     const nodesValue = document.getElementById('nodesValue');
     const kValue = document.getElementById('kValue');
     const jitterValue = document.getElementById('jitterValue');
     const goodPctValue = document.getElementById('goodPctValue');
     const badPctValue = document.getElementById('badPctValue');
     const shopPctValue = document.getElementById('shopPctValue');
-    const typePreviewEl = document.getElementById('typePreview');
 
-    function countTypes(nodeCount, goodPct, badPct, shopPct) {
-      const goodCount = Math.ceil(nodeCount * (goodPct / 100.0));
-      const badCount = Math.ceil(nodeCount * (badPct / 100.0));
-      const shopCount = Math.ceil(nodeCount * (shopPct / 100.0));
-      const totalSpecial = goodCount + badCount + shopCount;
-      const trimmedTotal = Math.min(totalSpecial, nodeCount);
-      const normalCount = nodeCount - trimmedTotal;
-      return {
-        normalCount,
-        goodCount: Math.min(goodCount, nodeCount),
-        badCount: Math.min(badCount, nodeCount),
-        shopCount: Math.min(shopCount, nodeCount),
-      };
-    }
-
-    function readTypePercentages() {
-      return {
-        goodPct: Number(goodPctSlider.value),
-        badPct: Number(badPctSlider.value),
-        shopPct: Number(shopPctSlider.value),
-      };
-    }
-
-    function refreshTypePercentLabels() {
-      const nodeCount = Number(nodesSlider.value);
-      const { goodPct, badPct, shopPct } = readTypePercentages();
-      goodPctValue.textContent = String(goodPct);
-      badPctValue.textContent = String(badPct);
-      shopPctValue.textContent = String(shopPct);
-      const total = goodPct + badPct + shopPct;
-      const counts = countTypes(nodeCount, goodPct, badPct, shopPct);
-      typePreviewEl.textContent = `Preview counts: normal ${counts.normalCount}, good ${counts.goodCount}, bad ${counts.badCount}, shop ${counts.shopCount}`;
-      if (total > 100) {
-        generatingStatus.textContent = `Type total is ${total}% (must be <= 100%)`;
-        generatingStatus.style.color = 'var(--warn)';
-      } else {
-        generatingStatus.textContent = `Normal will be ${100 - total}%`;
-        generatingStatus.style.color = 'var(--muted)';
-      }
-    }
-
-    // Update slider display values
     nodesSlider.addEventListener('input', (e) => {
       nodesValue.textContent = e.target.value;
-      // Update k-slider max value
-      kSlider.max = Math.max(20, parseInt(e.target.value) - 1);
-      refreshTypePercentLabels();
     });
 
     kSlider.addEventListener('input', (e) => {
@@ -1353,158 +1331,102 @@
       jitterValue.textContent = parseFloat(e.target.value).toFixed(2);
     });
 
-    goodPctSlider.addEventListener('input', refreshTypePercentLabels);
-    badPctSlider.addEventListener('input', refreshTypePercentLabels);
-    shopPctSlider.addEventListener('input', refreshTypePercentLabels);
+    goodPctSlider.addEventListener('input', (e) => {
+      goodPctValue.textContent = e.target.value;
+      updateTypePreview();
+    });
 
-    const SERVER_URL_STORAGE_KEY = 'sphereMapServerUrl';
+    badPctSlider.addEventListener('input', (e) => {
+      badPctValue.textContent = e.target.value;
+      updateTypePreview();
+    });
 
-    function getServerBaseUrl() {
-      const stored = localStorage.getItem(SERVER_URL_STORAGE_KEY);
-      return stored || 'http://localhost:8765';
+    shopPctSlider.addEventListener('input', (e) => {
+      shopPctValue.textContent = e.target.value;
+      updateTypePreview();
+    });
+
+    function updateTypePreview() {
+      const good = parseInt(goodPctSlider.value);
+      const bad = parseInt(badPctSlider.value);
+      const shop = parseInt(shopPctSlider.value);
+      const total = good + bad + shop;
+      const normal = Math.max(0, 100 - total);
+      typePreview.textContent = `Preview: Normal ${normal}% | Good ${good}% | Bad ${bad}% | Shop ${shop}%`;
     }
 
-    function setServerBaseUrl(value) {
-      const trimmed = value.trim().replace(/\/+$/, '');
-      if (trimmed) {
-        localStorage.setItem(SERVER_URL_STORAGE_KEY, trimmed);
-      } else {
-        localStorage.removeItem(SERVER_URL_STORAGE_KEY);
-      }
-      return trimmed;
-    }
+    updateTypePreview();
 
-    // Load any previously saved server URL into the field on startup.
-    serverUrlInput.value = localStorage.getItem(SERVER_URL_STORAGE_KEY) || '';
-    serverUrlInput.addEventListener('change', (e) => setServerBaseUrl(e.target.value));
-
-    async function generateMap() {
-      const nodes = nodesSlider.value;
-      const k = kSlider.value;
-      const jitter = jitterSlider.value;
+    generateBtn.addEventListener('click', async () => {
+      const serverUrl = serverUrlInput.value || 'http://localhost:8765';
+      const nodes = parseInt(nodesSlider.value);
+      const k = parseInt(kSlider.value);
+      const jitter = parseFloat(jitterSlider.value);
       const density = densitySelect.value;
-      const seed = seedInput.value.trim() || 'random';
-      const { goodPct, badPct, shopPct } = readTypePercentages();
-      if (goodPct + badPct + shopPct > 100) {
-        setStatus('good/bad/shop percentages must add up to 100 or less.', true);
-        return;
-      }
-
-      const baseUrl = setServerBaseUrl(serverUrlInput.value) || 'http://localhost:8765';
+      const seed = seedInput.value || undefined;
+      const goodPct = parseFloat(goodPctSlider.value);
+      const badPct = parseFloat(badPctSlider.value);
+      const shopPct = parseFloat(shopPctSlider.value);
 
       generateBtn.disabled = true;
-      generatingStatus.textContent = '⏳ Generating...';
-      generatingStatus.style.color = 'var(--accent-2)';
+      generatingStatus.textContent = 'Generating...';
 
       try {
-        const url = new URL('/api/generate', baseUrl);
-        url.searchParams.set('nodes', nodes);
-        url.searchParams.set('k_nearest', k);
-        url.searchParams.set('jitter', jitter);
-        url.searchParams.set('density', density);
-        url.searchParams.set('good_pct', String(goodPct));
-        url.searchParams.set('bad_pct', String(badPct));
-        url.searchParams.set('shop_pct', String(shopPct));
-        if (seed !== 'random') {
-          url.searchParams.set('seed', seed);
+        const params = new URLSearchParams({
+          nodes,
+          k_nearest: k,
+          jitter,
+          density,
+          good_pct: goodPct,
+          bad_pct: badPct,
+          shop_pct: shopPct,
+        });
+        if (seed) params.append('seed', seed);
+
+        const response = await fetch(`${serverUrl}/api/generate?${params}`);
+        const result = await response.json();
+
+        if (result.success && result.map) {
+          loadMap(result.map);
+          generatingStatus.textContent = `✓ Generated with seed ${result.map.meta.seed}`;
+        } else {
+          generatingStatus.textContent = `✗ Error: ${result.error}`;
         }
-
-        const response = await fetch(url.toString());
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Generation failed');
-        }
-
-        const data = await response.json();
-        if (!data.success) {
-          throw new Error(data.error || 'Generation failed');
-        }
-
-        const { points, edges, nodeTypes } = parseMap(JSON.stringify(data.map));
-        drawMap(points, edges, nodeTypes);
-
-        generatingStatus.textContent = `✓ Generated with seed ${data.map.meta.seed}`;
-        generatingStatus.style.color = 'var(--accent)';
-        seedInput.value = '';
       } catch (err) {
-        const hint = baseUrl.includes('localhost')
-          ? ' (using localhost \u2014 set Server URL above if your generator is hosted elsewhere)'
-          : '';
-        generatingStatus.textContent = `✗ ${err.message}`;
-        generatingStatus.style.color = 'var(--warn)';
-        setStatus(`Generation error: ${err.message}${hint}`, true);
+        generatingStatus.textContent = `✗ Error: ${err.message}`;
       } finally {
         generateBtn.disabled = false;
       }
+    });
+
+    // Save server URL to localStorage
+    serverUrlInput.addEventListener('change', (e) => {
+      localStorage.setItem('serverUrl', e.target.value);
+    });
+
+    // Load server URL from localStorage
+    const savedServerUrl = localStorage.getItem('serverUrl');
+    if (savedServerUrl) {
+      serverUrlInput.value = savedServerUrl;
     }
 
-    generateBtn.addEventListener('click', generateMap);
-
-    // Listen for Enter in seed input
-    seedInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        generateMap();
-      }
-    });
-
-    refreshTypePercentLabels();
-
-    window.addEventListener('dragover', (event) => {
-      event.preventDefault();
-      event.dataTransfer.dropEffect = 'copy';
-    });
-
-    window.addEventListener('drop', (event) => {
-      event.preventDefault();
-      const file = event.dataTransfer.files && event.dataTransfer.files[0];
-      if (!file) return;
-      if (!file.name.toLowerCase().endsWith('.json')) {
-        setStatus('Drop a JSON file generated by your map script.', true);
-        return;
-      }
-      loadFromFile(file);
-    });
-
+    // Animation loop
     function animate() {
       requestAnimationFrame(animate);
-
-      // Handle arrow key camera movement
-      if (keys.ArrowUp) {
-        pitch = clamp(pitch + 0.04, -Math.PI / 2 + 0.01, Math.PI / 2 - 0.01);
-        syncCamera();
-      }
-      if (keys.ArrowDown) {
-        pitch = clamp(pitch - 0.04, -Math.PI / 2 + 0.01, Math.PI / 2 - 0.01);
-        syncCamera();
-      }
-      if (keys.ArrowLeft) {
-        yaw += 0.04;
-        syncCamera();
-      }
-      if (keys.ArrowRight) {
-        yaw -= 0.04;
-        syncCamera();
-      }
-      if (keys.q) {
-        roll -= 0.04;
-        syncCamera();
-      }
-      if (keys.e) {
-        roll += 0.04;
-        syncCamera();
-      }
-
       renderer.render(scene, camera);
     }
 
+    animate();
+
+    // Handle window resize
     window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      camera.aspect = width / height;
       camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setSize(width, height);
     });
 
-    syncCamera();
-    animate();
   </script>
 </body>
 </html>
